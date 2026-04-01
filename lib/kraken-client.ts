@@ -42,7 +42,8 @@ export async function getMarketData(symbol: string): Promise<KrakenMarketData> {
 
     throw new Error('Live Kraken API integration endpoint is not configured in this demo scaffold.');
   } catch (error) {
-    throw new Error(`Failed to fetch market data for ${symbol}: ${(error as Error).message}`);
+    console.log('kraken-client getMarketData error:', error);
+    throw new Error('System currently unavailable. Please try again.');
   }
 }
 
@@ -63,7 +64,8 @@ export async function executeTrade(
 
     throw new Error(`Live trade execution not configured for ${action} ${amount} ${symbol}.`);
   } catch (error) {
-    throw new Error(`Failed to execute trade for ${symbol}: ${(error as Error).message}`);
+    console.log('kraken-client executeTrade error:', error);
+    throw new Error('System currently unavailable. Please try again.');
   }
 }
 
@@ -82,7 +84,8 @@ export async function getBalance(): Promise<BalanceSnapshot> {
 
     throw new Error('Live Kraken balance endpoint is not configured in this demo scaffold.');
   } catch (error) {
-    throw new Error(`Failed to fetch account balance: ${(error as Error).message}`);
+    console.log('kraken-client getBalance error:', error);
+    throw new Error('System currently unavailable. Please try again.');
   }
 }
 

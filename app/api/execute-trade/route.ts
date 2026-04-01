@@ -5,6 +5,7 @@ import { TradeRequestSchema } from '@/lib/validations';
 
 const ACCOUNT_SIZE_USD = 10_000;
 const MAX_RISK_FRACTION = 0.02;
+const MAX_CONTENT_LENGTH_BYTES = 4096;
 
 let consecutiveLosses = 0;
 const attemptedTrades: Array<{ at: string; request: ExecuteTradeRequest; approved: boolean; blockReason?: string }> = [];
@@ -14,6 +15,12 @@ const attemptedTrades: Array<{ at: string; request: ExecuteTradeRequest; approve
  */
 export async function POST(req: Request): Promise<Response> {
   try {
+    const contentLengthHeader = req.headers.get('content-length');
+    const contentLength = contentLengthHeader ? Number(contentLengthHeader) : 0;
+    if (Number.isFinite(contentLength) && contentLength > MAX_CONTENT_LENGTH_BYTES) {
+      return NextResponse.json({ success: false, blockReason: 'Payload too large.' }, { status: 413 });
+    }
+
     const body = await req.json();
     const parsed = TradeRequestSchema.safeParse(body);
 
@@ -73,7 +80,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (error) {
     console.log('execute-trade route error:', error);
     return NextResponse.json(
-      { success: false, blockReason: 'Trade execution failed due to an internal error.' },
+      { success: false, blockReason: 'System currently unavailable. Please try again.' },
       { status: 500 },
     );
   }

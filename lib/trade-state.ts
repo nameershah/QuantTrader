@@ -17,6 +17,44 @@ const defaultState: TradeState = {
   consecutiveLosses: 0,
 };
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function finiteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function sanitizeTradeState(input: unknown): TradeState {
+  if (!input || typeof input !== 'object') return defaultState;
+
+  const obj = input as Partial<TradeState>;
+  const balanceUsd = clamp(finiteNumber(obj.balance?.usd, defaultState.balance.usd), 0, 1_000_000_000);
+  const consecutiveLosses = clamp(Math.floor(finiteNumber(obj.consecutiveLosses, 0)), 0, 1_000_000);
+
+  const trades = Array.isArray(obj.trades)
+    ? obj.trades.filter((trade): trade is Trade => {
+        if (!trade || typeof trade !== 'object') return false;
+        const t = trade as Partial<Trade>;
+        if (typeof t.id !== 'string' || typeof t.timestamp !== 'string' || typeof t.symbol !== 'string') return false;
+        if (typeof t.mentorExplanation !== 'string' || (t.signal !== 'BUY' && t.signal !== 'SELL' && t.signal !== 'HOLD' && t.signal !== 'NO_SIGNAL')) {
+          return false;
+        }
+        if (t.action !== undefined && t.action !== 'BUY' && t.action !== 'SELL') return false;
+        if (t.amount !== undefined && !Number.isFinite(t.amount)) return false;
+        if (t.pnl !== undefined && !Number.isFinite(t.pnl)) return false;
+        if (t.status !== 'Simulated' && t.status !== 'Blocked by Risk Guard') return false;
+        return true;
+      })
+    : [];
+
+  return {
+    balance: { usd: balanceUsd },
+    trades,
+    consecutiveLosses,
+  };
+}
+
 export function useTrades() {
   const [state, setState] = useState<TradeState>(defaultState);
 
@@ -25,8 +63,8 @@ export function useTrades() {
     if (!raw) return;
 
     try {
-      const parsed = JSON.parse(raw) as TradeState;
-      setState(parsed);
+      const parsed = JSON.parse(raw) as unknown;
+      setState(sanitizeTradeState(parsed));
     } catch {
       setState(defaultState);
     }
