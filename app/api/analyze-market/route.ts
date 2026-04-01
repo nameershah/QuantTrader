@@ -2,34 +2,23 @@ import { createGroq } from '@ai-sdk/groq';
 import { streamText } from 'ai';
 import { NextResponse } from 'next/server';
 import { analyzeSignal } from '@/lib/market-analyzer';
-import type { MarketDataInput, MentorAnalysisResult } from '@/lib/types';
-
-interface AnalyzeRequest extends MarketDataInput {}
-
-function isValidBody(body: Partial<AnalyzeRequest>): body is AnalyzeRequest {
-  return Boolean(
-    body.symbol &&
-      typeof body.symbol === 'string' &&
-      typeof body.price === 'number' &&
-      typeof body.volume === 'number' &&
-      typeof body.volatility === 'number' &&
-      typeof body.ma20 === 'number' &&
-      typeof body.rsi === 'number',
-  );
-}
+import type { MentorAnalysisResult } from '@/lib/types';
+import { MarketDataSchema } from '@/lib/validations';
 
 /**
  * POST market metrics and receive deterministic signal + streamed mentor explanation.
  */
 export async function POST(req: Request): Promise<Response> {
   try {
-    const body = (await req.json()) as Partial<AnalyzeRequest>;
+    const body = await req.json();
+    const parsed = MarketDataSchema.safeParse(body);
 
-    if (!isValidBody(body)) {
-      return NextResponse.json({ error: 'Invalid input payload.' }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Invalid market data provided.' }, { status: 400 });
     }
 
-    const signalResult = analyzeSignal(body);
+    const validatedData = parsed.data;
+    const signalResult = analyzeSignal(validatedData);
 
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
@@ -46,7 +35,7 @@ export async function POST(req: Request): Promise<Response> {
     const groq = createGroq({ apiKey: groqApiKey });
     const prompt = `You are a Quant Mentor. The system flagged a ${signalResult.signal} because ${signalResult.rulesApplied.join(
       '; ',
-    )}. Market data: ${JSON.stringify(body)}. Explain to a beginner WHY these indicators suggest this action. Keep it under 3 sentences.`;
+    )}. Market data: ${JSON.stringify(validatedData)}. Explain to a beginner WHY these indicators suggest this action. Keep it under 3 sentences.`;
 
     const result = streamText({
       model: groq('llama-3.3-70b-versatile'),
@@ -120,8 +109,7 @@ export async function POST(req: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected API error';
-    const status = message.toLowerCase().includes('timeout') ? 504 : 500;
-    return NextResponse.json({ error: message }, { status });
+    console.log('analyze-market route error:', error);
+    return NextResponse.json({ error: 'Market analysis failed. Please try again.' }, { status: 500 });
   }
 }

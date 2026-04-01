@@ -16,7 +16,8 @@
     "ai": "latest",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "latest",

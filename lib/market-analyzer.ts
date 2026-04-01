@@ -1,5 +1,6 @@
 import { streamText } from 'ai';
 import type { MarketDataInput, MentorAnalysisResult, RuleSignalResult } from '@/lib/types';
+import type { ValidatedMarketData } from '@/lib/validations';
 
 /**
  * Calculates a moving average over the latest number of days.
@@ -78,7 +79,7 @@ export function analyzeSignal(marketData: MarketDataInput): RuleSignalResult {
  * Uses an LLM mentor layer to explain deterministic signals for education.
  */
 export async function analyzeWithLLMMentor(
-  marketData: MarketDataInput,
+  marketData: ValidatedMarketData,
   ruleSignal: RuleSignalResult,
   groqModel: unknown,
 ): Promise<Omit<MentorAnalysisResult, 'timestamp'>> {
@@ -98,8 +99,17 @@ export async function analyzeWithLLMMentor(
   const fallback =
     'Signal generated from deterministic quant rules. Treat this as practice context and wait for stronger confluence when confidence is limited.';
 
+  // This payload is expected to originate from MarketDataSchema.safeParse().
+  const safePromptData = {
+    symbol: marketData.symbol,
+    price: marketData.price,
+    volume: marketData.volume,
+    volatility: marketData.volatility,
+    ma20: marketData.ma20,
+    rsi: marketData.rsi,
+  };
   const content = `Signal: ${ruleSignal.signal}. Rules: ${ruleSignal.rulesApplied.join(' ')}. Data: ${JSON.stringify(
-    marketData,
+    safePromptData,
   )}. ${instruction}`;
 
   try {

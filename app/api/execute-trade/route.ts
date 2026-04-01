@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { krakenClient } from '@/lib/kraken-client';
 import type { ExecuteTradeRequest, ExecuteTradeResponse } from '@/lib/types';
+import { TradeRequestSchema } from '@/lib/validations';
 
 const ACCOUNT_SIZE_USD = 10_000;
 const MAX_RISK_FRACTION = 0.02;
@@ -8,33 +9,30 @@ const MAX_RISK_FRACTION = 0.02;
 let consecutiveLosses = 0;
 const attemptedTrades: Array<{ at: string; request: ExecuteTradeRequest; approved: boolean; blockReason?: string }> = [];
 
-function validateTradePayload(body: Partial<ExecuteTradeRequest>): body is ExecuteTradeRequest {
-  return Boolean(
-    body.symbol &&
-      typeof body.symbol === 'string' &&
-      (body.action === 'BUY' || body.action === 'SELL') &&
-      typeof body.amount === 'number' &&
-      body.amount > 0,
-  );
-}
-
 /**
  * Executes paper trades under educational risk controls.
  */
 export async function POST(req: Request): Promise<Response> {
   try {
-    const body = (await req.json()) as Partial<ExecuteTradeRequest>;
+    const body = await req.json();
+    const parsed = TradeRequestSchema.safeParse(body);
 
-    if (!validateTradePayload(body)) {
+    if (!parsed.success) {
       return NextResponse.json({ success: false, blockReason: 'Invalid trade request payload.' }, { status: 400 });
     }
+    const validatedRequest: ExecuteTradeRequest = parsed.data;
 
-    if (body.amount > ACCOUNT_SIZE_USD * MAX_RISK_FRACTION) {
+    if (validatedRequest.amount > ACCOUNT_SIZE_USD * MAX_RISK_FRACTION) {
       const response: ExecuteTradeResponse = {
         success: false,
         blockReason: 'Institutional guardrail triggered: Never risk more than 2% on a single trade.',
       };
-      attemptedTrades.push({ at: new Date().toISOString(), request: body, approved: false, blockReason: response.blockReason });
+      attemptedTrades.push({
+        at: new Date().toISOString(),
+        request: validatedRequest,
+        approved: false,
+        blockReason: response.blockReason,
+      });
       return NextResponse.json(response, { status: 403 });
     }
 
@@ -43,12 +41,21 @@ export async function POST(req: Request): Promise<Response> {
         success: false,
         blockReason: 'Institutional guardrail triggered: Max 3 consecutive losses reached.',
       };
-      attemptedTrades.push({ at: new Date().toISOString(), request: body, approved: false, blockReason: response.blockReason });
+      attemptedTrades.push({
+        at: new Date().toISOString(),
+        request: validatedRequest,
+        approved: false,
+        blockReason: response.blockReason,
+      });
       return NextResponse.json(response, { status: 403 });
     }
 
-    const trade = await krakenClient.executeTrade(body.symbol, body.action, body.amount);
-    attemptedTrades.push({ at: new Date().toISOString(), request: body, approved: true });
+    const trade = await krakenClient.executeTrade(
+      validatedRequest.symbol,
+      validatedRequest.action,
+      validatedRequest.amount,
+    );
+    attemptedTrades.push({ at: new Date().toISOString(), request: validatedRequest, approved: true });
 
     if (trade.status !== 'filled') {
       consecutiveLosses += 1;
@@ -64,8 +71,9 @@ export async function POST(req: Request): Promise<Response> {
 
     return NextResponse.json(successResponse);
   } catch (error) {
+    console.log('execute-trade route error:', error);
     return NextResponse.json(
-      { success: false, blockReason: `Trade execution failed: ${(error as Error).message}` },
+      { success: false, blockReason: 'Trade execution failed due to an internal error.' },
       { status: 500 },
     );
   }
